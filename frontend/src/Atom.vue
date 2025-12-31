@@ -247,71 +247,39 @@
         },
         mounted() {
             console.log('Atom component mounted')
-            console.log('atomValue:', this.atomValue)
-            // 从 atomValue 中初始化表单数据
+            
+            // 从 atomValue 中初始化表单数据（仅作为本地备份操作）
             if (this.atomValue) {
-                // 1. 先把值读出来
-                let server = this.atomValue.server || ''
-                let token = this.atomValue.token || ''
-                let projectId = this.atomValue.projectId || ''
-                let projectName = this.atomValue.projectName || ''
-                let appId = this.atomValue.appId || ''
-                let appName = this.atomValue.appName || ''
+                // 1. 将平台数据备份到本地 formData
+                this.formData.server = this.atomValue.server || ''
+                this.formData.token = this.atomValue.token || ''
+                this.formData.projectId = this.atomValue.projectId || ''
+                this.formData.projectName = this.atomValue.projectName || ''
+                this.formData.appId = this.atomValue.appId || ''
+                this.formData.appName = this.atomValue.appName || ''
 
-                // 2. 强力合规性校验（三级限制）
-                // 第一级校验：服务器和Token不存在，则下级全部移除
-                if (!server || !token) {
-                    projectId = ''
-                    projectName = ''
-                    appId = ''
-                    appName = ''
+                // 2. 核心：如果已有配置，拉取列表以供回显
+                if (this.formData.server && this.formData.token) {
+                    this.fetchProjectList()
+                    if (this.formData.projectId) {
+                        this.fetchAppList()
+                    }
                 }
-                // 第二级校验：项目不存在，则应用移除
-                else if (!projectId) {
-                    appId = ''
-                    appName = ''
-                }
-
-                // 3. 将清洗后的数据写回本地表单和 atomValue
-                this.formData.server = server
-                this.formData.token = token
-                this.formData.projectId = projectId
-                this.formData.projectName = projectName
-                this.formData.appId = appId
-                this.formData.appName = appName
-
-                this.atomValue.projectId = projectId
-                this.atomValue.projectName = projectName
-                this.atomValue.appId = appId
-                this.atomValue.appName = appName
             }
         },
         watch: {
             'formData.server'(newVal) {
-                this.atomValue.server = newVal
                 this.clearTestResult()
-                // 当服务器地址变动或清空时，重置所有下级数据
+                // 仅操作本地重置，不污染 atomValue
                 this.resetProjectData()
             },
             'formData.token'(newVal) {
-                this.atomValue.token = newVal
                 this.clearTestResult()
-                // 当 Token 变动或清空时，重置所有下级数据
                 this.resetProjectData()
             },
             'formData.projectId'(newVal) {
-                this.atomValue.projectId = newVal
-                // 当项目 ID 变动或清空时，重置应用数据
+                // 仅操作本地重置
                 this.resetAppData()
-            },
-            'formData.projectName'(newVal) {
-                this.atomValue.projectName = newVal
-            },
-            'formData.appId'(newVal) {
-                this.atomValue.appId = newVal
-            },
-            'formData.appName'(newVal) {
-                this.atomValue.appName = newVal
             }
         },
         methods: {
@@ -733,17 +701,12 @@
                 clearTimeout(this.successTimer)
             }
             
-            // 🚨 组件销毁前（关闭侧边栏时）的最后一次同步与状态回传
-            // 1. 强制全量同步一次数据
-            Object.keys(this.formData).forEach(key => {
-                this.$set(this.atomValue, key, this.formData[key])
-            })
-            
-            // 2. 执行静默校验并通知平台最终状态
-            const isFinalValid = this.validateAll(false) // false 表示不显示 UI 上的红色错误
+            // 💡 只有在点击保存按钮时才同步到 atomValue
+            // 侧边栏关闭时仅回传当前的校验状态，不强制覆盖数据，保护已保存的数据不被中间态破坏
+            const isFinalValid = this.validateAll(false)
             this.setAtomIsError(!isFinalValid)
             
-            console.log('[BKCI-ATOM] Final cleanup and sync completed. Valid:', isFinalValid)
+            console.log('[BKCI-ATOM] Cleanup completed. Valid:', isFinalValid)
         }
     }
 </script>
