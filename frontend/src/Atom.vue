@@ -62,6 +62,66 @@
                 </div>
             </transition>
         </div>
+
+        <!-- 项目选择 -->
+        <div class="form-group" :class="{ 'has-error': errors.projectName.show }">
+            <label class="form-label required">项目</label>
+            <select 
+                class="form-select"
+                v-model="formData.projectId"
+                @change="handleProjectChange(formData.projectId)"
+                @focus="fetchProjectList()"
+                :disabled="atomPropsDisabled || !formData.server || !formData.token"
+            >
+                <option value="">请选择项目</option>
+                <option 
+                    v-for="project in projectList" 
+                    :key="project.id" 
+                    :value="project.id"
+                >
+                    {{ project.name }}
+                </option>
+            </select>
+            <div class="error-message" v-if="errors.projectName.show">
+                {{ errors.projectName.message }}
+            </div>
+            <div class="field-tip" v-if="!formData.server || !formData.token">
+                请先填写服务器地址和Token
+            </div>
+            <div class="field-tip" v-if="projectLoading">
+                加载中...
+            </div>
+        </div>
+
+        <!-- 应用选择 -->
+        <div class="form-group" :class="{ 'has-error': errors.appName.show }">
+            <label class="form-label required">应用</label>
+            <select 
+                class="form-select"
+                v-model="formData.appId"
+                @change="handleAppChange(formData.appId)"
+                @focus="fetchAppList()"
+                :disabled="atomPropsDisabled || !formData.projectId"
+            >
+                <option value="">请选择应用</option>
+                <option 
+                    v-for="app in appList" 
+                    :key="app.id" 
+                    :value="app.id"
+                >
+                    {{ app.name }}
+                </option>
+            </select>
+            <div class="error-message" v-if="errors.appName.show">
+                {{ errors.appName.message }}
+            </div>
+            <div class="field-tip" v-if="!formData.projectId">
+                请先选择项目
+            </div>
+            <div class="field-tip" v-if="appLoading">
+                加载中...
+            </div>
+        </div>
     </section>
 </template>
 
@@ -94,7 +154,11 @@
             return {
                 formData: {
                     server: '',
-                    token: ''
+                    token: '',
+                    projectId: '',
+                    projectName: '',
+                    appId: '',
+                    appName: ''
                 },
                 errors: {
                     server: {
@@ -104,11 +168,21 @@
                     token: {
                         show: false,
                         message: ''
+                    },
+                    projectName: {
+                        show: false,
+                        message: ''
+                    },
+                    appName: {
+                        show: false,
+                        message: ''
                     }
                 },
                 touched: {
                     server: false,
-                    token: false
+                    token: false,
+                    projectName: false,
+                    appName: false
                 },
                 isLoading: false,
                 testResult: {
@@ -116,7 +190,15 @@
                     type: '', // 'success' or 'error'
                     message: ''
                 },
-                successTimer: null
+                successTimer: null,
+                // 项目相关
+                projectList: [],
+                projectLoading: false,
+                projectSearchKeyword: '',
+                // 应用相关
+                appList: [],
+                appLoading: false,
+                appSearchKeyword: ''
             }
         },
         mounted() {
@@ -124,6 +206,10 @@
             if (this.atomValue) {
                 this.formData.server = this.atomValue.server || ''
                 this.formData.token = this.atomValue.token || ''
+                this.formData.projectId = this.atomValue.projectId || ''
+                this.formData.projectName = this.atomValue.projectName || ''
+                this.formData.appId = this.atomValue.appId || ''
+                this.formData.appName = this.atomValue.appName || ''
             }
         },
         watch: {
@@ -134,12 +220,57 @@
             'formData.token'(newVal) {
                 this.atomValue.token = newVal
                 this.clearTestResult()
+            },
+            'formData.projectId'(newVal) {
+                this.atomValue.projectId = newVal
+            },
+            'formData.projectName'(newVal) {
+                this.atomValue.projectName = newVal
+            },
+            'formData.appId'(newVal) {
+                this.atomValue.appId = newVal
+            },
+            'formData.appName'(newVal) {
+                this.atomValue.appName = newVal
             }
         },
         methods: {
             // 验证单个字段
             validateField(fieldName) {
                 const value = this.formData[fieldName]
+                
+                // 特殊处理：projectName 和 appName 的验证基于对应的 ID
+                if (fieldName === 'projectName') {
+                    if (!this.formData.projectId) {
+                        this.errors.projectName = {
+                            show: true,
+                            message: '请选择项目'
+                        }
+                        return false
+                    } else {
+                        this.errors.projectName = {
+                            show: false,
+                            message: ''
+                        }
+                        return true
+                    }
+                }
+                
+                if (fieldName === 'appName') {
+                    if (!this.formData.appId) {
+                        this.errors.appName = {
+                            show: true,
+                            message: '请选择应用'
+                        }
+                        return false
+                    } else {
+                        this.errors.appName = {
+                            show: false,
+                            message: ''
+                        }
+                        return true
+                    }
+                }
                 
                 if (!value || value.trim() === '') {
                     this.errors[fieldName] = {
@@ -202,37 +333,74 @@
                 this.clearTestResult()
                 
                 try {
-                    // 这里调用实际的API接口测试连接
-                    // 示例：使用axios发送请求
+                    // 处理 server 地址
+                    let server = this.formData.server.trim()
+                    
+                    // 自动添加 http:// 前缀
+                    if (!server.startsWith('http://') && !server.startsWith('https://')) {
+                        server = 'http://' + server
+                    }
+                    
+                    // 移除末尾的 /
+                    if (server.endsWith('/')) {
+                        server = server.substring(0, server.length - 1)
+                    }
+                    
+                    // 构建完整 URL（与后端保持一致）
+                    const apiPath = '/sast/api-v1/open-api/system/user/token/connect'
+                    const token = this.formData.token.trim()
+                    const url = `${server}${apiPath}?token=${encodeURIComponent(token)}`
+                    
+                    console.log('Testing connection to:', url)
+                    
+                    // 发送 GET 请求，Header 也带上 token（与后端保持一致）
                     const response = await this.$ajax({
-                        url: `${this.formData.server}/api/test-connection`,
-                        method: 'POST',
+                        url: url,
+                        method: 'GET',
                         headers: {
-                            'Authorization': `Bearer ${this.formData.token}`
+                            'Sast-Token': token,
+                            'User-Agent': 'bkci-custom-atom-frontend/1.0'
                         },
                         timeout: 10000 // 10秒超时
                     })
                     
-                    // 连接成功
-                    this.testResult = {
-                        show: true,
-                        type: 'success',
-                        message: '连接成功！'
-                    }
+                    // 检查响应中的 duration 字段
+                    console.log('Connection test response:', response)
                     
-                    // 3秒后自动隐藏成功提示
-                    this.successTimer = setTimeout(() => {
-                        this.clearTestResult()
-                    }, 3000)
+                    if (response.data && response.data.data && response.data.data.duration === "1") {
+                        // duration === "1" 表示连接成功
+                        this.testResult = {
+                            show: true,
+                            type: 'success',
+                            message: '连接成功！'
+                        }
+                        
+                        // 3秒后自动隐藏成功提示
+                        this.successTimer = setTimeout(() => {
+                            this.clearTestResult()
+                        }, 3000)
+                    } else {
+                        // duration 不为 1，视为失败
+                        throw new Error('连接测试失败：duration 字段校验不通过')
+                    }
                     
                 } catch (error) {
                     // 连接失败
+                    console.error('Connection test failed:', error)
+                    
                     let errorMessage = '连接失败，请检查服务器地址和Token是否正确'
                     
                     if (error.message) {
                         errorMessage = error.message
-                    } else if (error.response && error.response.data && error.response.data.message) {
-                        errorMessage = error.response.data.message
+                    } else if (error.response) {
+                        const status = error.response.status
+                        const data = error.response.data
+                        
+                        if (data && data.message) {
+                            errorMessage = `连接失败 (${status}): ${data.message}`
+                        } else {
+                            errorMessage = `连接失败，HTTP 状态码: ${status}`
+                        }
                     }
                     
                     this.testResult = {
@@ -248,6 +416,138 @@
             // 当用户输入相关参数后，把字段写入到this.atomValue
             handleUpdate(name, value) {
                 this.atomValue[name] = value
+            },
+            
+            // 获取项目列表
+            async fetchProjectList(keyword = '') {
+                if (!this.formData.server || !this.formData.token) {
+                    console.warn('Server or token not set, cannot fetch project list')
+                    return
+                }
+                
+                this.projectLoading = true
+                try {
+                    let server = this.formData.server.trim()
+                    if (!server.startsWith('http://') && !server.startsWith('https://')) {
+                        server = 'http://' + server
+                    }
+                    if (server.endsWith('/')) {
+                        server = server.substring(0, server.length - 1)
+                    }
+                    
+                    const token = this.formData.token.trim()
+                    const url = `${server}/sast/api-v1/open-api/project/page?contParam=${encodeURIComponent(keyword)}&roleId=&status=&sort=&order=&pageNum=1&pageSize=20`
+                    
+                    const response = await this.$ajax({
+                        url: url,
+                        method: 'GET',
+                        headers: {
+                            'Sast-Token': token
+                        },
+                        timeout: 10000
+                    })
+                    
+                    if (response.data && response.data.code === 0 && response.data.data && response.data.data.records) {
+                        this.projectList = response.data.data.records.map(item => ({
+                            id: item.projectId,
+                            name: item.projectName
+                        }))
+                    } else {
+                        this.projectList = []
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch project list:', error)
+                    this.projectList = []
+                } finally {
+                    this.projectLoading = false
+                }
+            },
+            
+            // 获取应用列表
+            async fetchAppList(keyword = '') {
+                if (!this.formData.server || !this.formData.token || !this.formData.projectId) {
+                    console.warn('Server, token or projectId not set, cannot fetch app list')
+                    return
+                }
+                
+                this.appLoading = true
+                try {
+                    let server = this.formData.server.trim()
+                    if (!server.startsWith('http://') && !server.startsWith('https://')) {
+                        server = 'http://' + server
+                    }
+                    if (server.endsWith('/')) {
+                        server = server.substring(0, server.length - 1)
+                    }
+                    
+                    const token = this.formData.token.trim()
+                    const projectId = this.formData.projectId
+                    const url = `${server}/sast/api-v1/app/info/${projectId}?sort=&order=&projectId=${projectId}&pageNum=1&pageSize=20`
+                    
+                    const response = await this.$ajax({
+                        url: url,
+                        method: 'GET',
+                        headers: {
+                            'Sast-Token': token
+                        },
+                        timeout: 10000
+                    })
+                    
+                    if (response.data && response.data.code === 0 && response.data.data && response.data.data.records) {
+                        let apps = response.data.data.records
+                        // 如果有搜索关键字，进行前端过滤
+                        if (keyword) {
+                            apps = apps.filter(item => item.appName && item.appName.toLowerCase().includes(keyword.toLowerCase()))
+                        }
+                        this.appList = apps.map(item => ({
+                            id: item.appId,
+                            name: item.appName
+                        }))
+                    } else {
+                        this.appList = []
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch app list:', error)
+                    this.appList = []
+                } finally {
+                    this.appLoading = false
+                }
+            },
+            
+            // 项目选择变化
+            handleProjectChange(projectId) {
+                const project = this.projectList.find(p => p.id === projectId)
+                if (project) {
+                    this.formData.projectId = project.id
+                    this.formData.projectName = project.name
+                    // 清空应用选择
+                    this.formData.appId = ''
+                    this.formData.appName = ''
+                    this.appList = []
+                    // 自动加载应用列表
+                    this.fetchAppList()
+                }
+            },
+            
+            // 应用选择变化
+            handleAppChange(appId) {
+                const app = this.appList.find(a => a.id === appId)
+                if (app) {
+                    this.formData.appId = app.id
+                    this.formData.appName = app.name
+                }
+            },
+            
+            // 项目搜索
+            handleProjectSearch(keyword) {
+                this.projectSearchKeyword = keyword
+                this.fetchProjectList(keyword)
+            },
+            
+            // 应用搜索
+            handleAppSearch(keyword) {
+                this.appSearchKeyword = keyword
+                this.fetchAppList(keyword)
             }
         },
         beforeDestroy() {
@@ -291,7 +591,8 @@
             }
         }
         
-        .form-input {
+        .form-input,
+        .form-select {
             width: 100%;
             height: 36px;
             padding: 0 12px;
@@ -322,6 +623,27 @@
             &::placeholder {
                 color: #c4c6cc;
             }
+        }
+        
+        .form-select {
+            cursor: pointer;
+            padding-right: 30px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2363656e' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 12px;
+            appearance: none;
+            
+            &:disabled {
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c4c6cc' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            }
+        }
+        
+        .field-tip {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #979ba5;
+            line-height: 1.5;
         }
         
         .error-message {

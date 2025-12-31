@@ -26,6 +26,16 @@ public class XMirrorSastAtom implements TaskAtom<XMirrorSastAtomParam> {
         XMirrorSastAtomParam param = atomContext.getParam();
         AtomResult result = atomContext.getResult();
         
+        // 打印所有参数
+        logger.info("========== SAST Plugin Execution Parameters ==========");
+        logger.info("Server: {}", param.getServer());
+        logger.info("Token: {}", param.getToken() != null ? "***" + param.getToken().substring(Math.max(0, param.getToken().length() - 4)) : "null");
+        logger.info("ProjectId: {}", param.getProjectId());
+        logger.info("ProjectName: {}", param.getProjectName());
+        logger.info("AppId: {}", param.getAppId());
+        logger.info("AppName: {}", param.getAppName());
+        logger.info("====================================================");
+        
         String token = param.getToken();
         String server = param.getServer();
         logger.info("Starting connection test...");
@@ -69,8 +79,16 @@ public class XMirrorSastAtom implements TaskAtom<XMirrorSastAtomParam> {
             logger.info("Response Body: {}", body);
             
             if (response.isSuccessful()) {
-                result.setStatus(Status.success);
-                result.setMessage("Connection successful");
+                // 检查响应 JSON 中的 duration 字段
+                if (body.contains("\"duration\":\"1\"") || body.contains("\"duration\": \"1\"")) {
+                    result.setStatus(Status.success);
+                    result.setMessage("Connection successful - duration check passed");
+                    logger.info("Connection test passed: duration = 1");
+                } else {
+                    result.setStatus(Status.failure);
+                    result.setMessage("Connection test failed: duration != 1");
+                    logger.warn("Connection test failed: duration field not equals 1 in response");
+                }
             } else {
                 result.setStatus(Status.failure);
                 result.setMessage("Connection failed with status: " + code);

@@ -11,11 +11,33 @@
   "input": {
     "server": {
       "label": "SAST服务器地址",
-      "type": "vuex-input"
+      "type": "vuex-input",
+      "required": true
     },
     "token": {
       "label": "Token",
-      "type": "vuex-input"
+      "type": "vuex-input",
+      "required": true
+    },
+    "projectId": {
+      "label": "项目ID",
+      "type": "vuex-input",
+      "hidden": true
+    },
+    "projectName": {
+      "label": "项目",
+      "type": "vuex-input",
+      "required": true
+    },
+    "appId": {
+      "label": "应用ID",
+      "type": "vuex-input",
+      "hidden": true
+    },
+    "appName": {
+      "label": "应用",
+      "type": "vuex-input",
+      "required": true
     }
   }
 }
