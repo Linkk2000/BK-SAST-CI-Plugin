@@ -10,9 +10,9 @@
                 <input 
                     type="text" 
                     class="form-input"
-                    v-model="formData.server"
+                    v-model="sastTask.server"
                     @blur="handleBlur('server')"
-                    @input="handleInput('server')"
+                    @input="updateTaskField('server', $event.target.value)"
                     placeholder="请输入SAST服务器地址"
                     :disabled="atomPropsDisabled"
                 />
@@ -27,9 +27,9 @@
                 <input 
                     type="password" 
                     class="form-input"
-                    v-model="formData.token"
+                    v-model="sastTask.token"
                     @blur="handleBlur('token')"
-                    @input="handleInput('token')"
+                    @input="updateTaskField('token', $event.target.value)"
                     placeholder="请输入Token"
                     :disabled="atomPropsDisabled"
                 />
@@ -72,10 +72,10 @@
             <div class="form-group" :class="{ 'has-error': fieldErrors.projectName.show }">
                 <label class="form-label required">项目</label>
                 <bk-select 
-                    v-model="formData.projectId"
+                    v-model="sastTask.projectId"
                     :searchable="true"
                     :loading="projectLoading"
-                    :disabled="atomPropsDisabled || !formData.server || !formData.token"
+                    :disabled="atomPropsDisabled || !sastTask.server || !sastTask.token"
                     placeholder="请选择或搜索项目"
                     @change="handleProjectChange"
                     @clear="resetProjectData"
@@ -92,7 +92,7 @@
                 <div class="error-message" v-if="fieldErrors.projectName.show">
                     {{ fieldErrors.projectName.message }}
                 </div>
-                <div class="field-tip" v-if="!formData.server || !formData.token">
+                <div class="field-tip" v-if="!sastTask.server || !sastTask.token">
                     请先完成服务器信息配置并测试连接
                 </div>
             </div>
@@ -101,10 +101,10 @@
             <div class="form-group" :class="{ 'has-error': fieldErrors.appName.show }">
                 <label class="form-label required">应用</label>
                 <bk-select 
-                    v-model="formData.appId"
+                    v-model="sastTask.appId"
                     :searchable="true"
                     :loading="appLoading"
-                    :disabled="atomPropsDisabled || !formData.projectId"
+                    :disabled="atomPropsDisabled || !sastTask.projectId"
                     placeholder="请选择或搜索应用"
                     @change="handleAppChange"
                     @clear="resetAppData"
@@ -121,7 +121,7 @@
                 <div class="error-message" v-if="fieldErrors.appName.show">
                     {{ fieldErrors.appName.message }}
                 </div>
-                <div class="field-tip" v-if="!formData.projectId">
+                <div class="field-tip" v-if="!sastTask.projectId">
                     请先选择关联项目
                 </div>
             </div>
@@ -173,7 +173,8 @@
         },
         data() {
             return {
-                formData: {
+                // 核心：本地数据副本，所有 UI 绑定均基于此
+                sastTask: {
                     server: '',
                     token: '',
                     projectId: '',
@@ -181,23 +182,12 @@
                     appId: '',
                     appName: ''
                 },
+                // 校验状态保持独立
                 fieldErrors: {
-                    server: {
-                        show: false,
-                        message: ''
-                    },
-                    token: {
-                        show: false,
-                        message: ''
-                    },
-                    projectName: {
-                        show: false,
-                        message: ''
-                    },
-                    appName: {
-                        show: false,
-                        message: ''
-                    }
+                    server: { show: false, message: '' },
+                    token: { show: false, message: '' },
+                    projectName: { show: false, message: '' },
+                    appName: { show: false, message: '' }
                 },
                 touched: {
                     server: false,
@@ -206,147 +196,119 @@
                     appName: false
                 },
                 isLoading: false,
-                testResult: {
-                    show: false,
-                    type: '', // 'success' or 'error'
-                    message: ''
-                },
-                saveStatus: {
-                    show: false,
-                    message: ''
-                },
+                testResult: { show: false, type: '', message: '' },
+                saveStatus: { show: false, message: '' },
                 successTimer: null,
-                // 项目相关
                 projectList: [],
                 projectLoading: false,
                 projectSearchKeyword: '',
-                // 应用相关
                 appList: [],
                 appLoading: false,
                 appSearchKeyword: ''
             }
         },
         computed: {
-            // 判断是否为本地开发环境
             isLocalDev() {
-                return typeof ISLOCAL !== 'undefined' && ISLOCAL === true
+                // 读取 main.js 中设置的环境标识
+                return window.__ATOM_ENV__ && window.__ATOM_ENV__.isLocal === true
             },
-            // 是否启用 Mock 数据（本地开发时自动启用）
             useMock() {
                 return this.isLocalDev
             },
-            // 决定使用真实 Ajax 还是 Mock Ajax
             ajax() {
                 return this.useMock ? mockAjax : this.$ajax
             }
         },
-        created() {
-            if (this.useMock) {
-                console.warn('[BKCI-ATOM] MOCK MODE ENABLED')
-            }
-        },
         mounted() {
             console.log('Atom component mounted')
-            
-            // 从 atomValue 中初始化表单数据（仅作为本地备份操作）
-            if (this.atomValue) {
-                // 1. 将平台数据备份到本地 formData
-                this.formData.server = this.atomValue.server || ''
-                this.formData.token = this.atomValue.token || ''
-                this.formData.projectId = this.atomValue.projectId || ''
-                this.formData.projectName = this.atomValue.projectName || ''
-                this.formData.appId = this.atomValue.appId || ''
-                this.formData.appName = this.atomValue.appName || ''
-
-                // 2. 核心：如果已有配置，拉取列表以供回显
-                if (this.formData.server && this.formData.token) {
-                    this.fetchProjectList()
-                    if (this.formData.projectId) {
-                        this.fetchAppList()
-                    }
-                }
-            }
-        },
-        watch: {
-            'formData.server'(newVal) {
-                this.clearTestResult()
-                // 仅操作本地重置，不污染 atomValue
-                this.resetProjectData()
-            },
-            'formData.token'(newVal) {
-                this.clearTestResult()
-                this.resetProjectData()
-            },
-            'formData.projectId'(newVal) {
-                // 仅操作本地重置
-                this.resetAppData()
-            }
+            this.initSastTask()
         },
         methods: {
+            // 封装一：初始化逻辑
+            initSastTask() {
+                if (this.atomValue) {
+                    // 深拷贝平台数据到本地副本
+                    const platformData = JSON.parse(JSON.stringify(this.atomValue))
+                    Object.keys(this.sastTask).forEach(key => {
+                        this.sastTask[key] = platformData[key] || ''
+                    })
+
+                    // 初始化回显列表
+                    if (this.sastTask.server && this.sastTask.token) {
+                        this.fetchProjectList()
+                        if (this.sastTask.projectId) {
+                            this.fetchAppList()
+                        }
+                    }
+                }
+            },
+
+            // 封装二：统一字段更新入口（替代 watch）
+            updateTaskField(field, value) {
+                this.sastTask[field] = value
+                
+                // 显式联动逻辑
+                if (field === 'server' || field === 'token') {
+                    this.clearTestResult()
+                    this.resetProjectData() 
+                } else if (field === 'projectId') {
+                    this.resetAppData()
+                }
+
+                if (this.touched[field]) {
+                    this.validateField(field)
+                }
+            },
+
+            // 封装三：同步回平台
+            syncToPlatform() {
+                Object.keys(this.sastTask).forEach(key => {
+                    this.$set(this.atomValue, key, this.sastTask[key])
+                })
+            },
+
             // 重置项目及以下所有数据
             resetProjectData() {
-                this.formData.projectId = ''
-                this.formData.projectName = ''
+                this.sastTask.projectId = ''
+                this.sastTask.projectName = ''
                 this.projectList = []
                 this.resetAppData()
             },
             
             // 重置应用数据
             resetAppData() {
-                this.formData.appId = ''
-                this.formData.appName = ''
+                this.sastTask.appId = ''
+                this.sastTask.appName = ''
                 this.appList = []
             },
             // 验证单个字段
             validateField(fieldName) {
-                const value = this.formData[fieldName]
+                const value = this.sastTask[fieldName]
                 
-                // 特殊处理：projectName 和 appName 的验证基于对应的 ID
                 if (fieldName === 'projectName') {
-                    if (!this.formData.projectId) {
-                        this.fieldErrors.projectName = {
-                            show: true,
-                            message: '请选择项目'
-                        }
+                    if (!this.sastTask.projectId) {
+                        this.fieldErrors.projectName = { show: true, message: '请选择项目' }
                         return false
-                    } else {
-                        this.fieldErrors.projectName = {
-                            show: false,
-                            message: ''
-                        }
-                        return true
                     }
+                    this.fieldErrors.projectName = { show: false, message: '' }
+                    return true
                 }
                 
                 if (fieldName === 'appName') {
-                    if (!this.formData.appId) {
-                        this.fieldErrors.appName = {
-                            show: true,
-                            message: '请选择应用'
-                        }
+                    if (!this.sastTask.appId) {
+                        this.fieldErrors.appName = { show: true, message: '请选择应用' }
                         return false
-                    } else {
-                        this.fieldErrors.appName = {
-                            show: false,
-                            message: ''
-                        }
-                        return true
                     }
-                }
-                
-                if (!value || value.trim() === '') {
-                    this.fieldErrors[fieldName] = {
-                        show: true,
-                        message: '字段不能为空'
-                    }
-                    return false
-                } else {
-                    this.fieldErrors[fieldName] = {
-                        show: false,
-                        message: ''
-                    }
+                    this.fieldErrors.appName = { show: false, message: '' }
                     return true
                 }
+                
+                if (!value || (typeof value === 'string' && value.trim() === '')) {
+                    this.fieldErrors[fieldName] = { show: true, message: '字段不能为空' }
+                    return false
+                }
+                this.fieldErrors[fieldName] = { show: false, message: '' }
+                return true
             },
             
             // 失焦验证
@@ -355,22 +317,16 @@
                 this.validateField(fieldName)
             },
             
-            // 输入时验证
-            handleInput(fieldName) {
-                if (this.touched[fieldName]) {
-                    this.validateField(fieldName)
-                }
-            },
-            
             // 验证所有字段
             validateAll(showErrors = true) {
                 let isValid = true
-                Object.keys(this.formData).forEach(key => {
+                // 仅验证我们需要同步到平台的字段
+                const fieldsToValidate = ['server', 'token', 'projectName', 'appName']
+                fieldsToValidate.forEach(key => {
                     const fieldValid = this.checkFieldValid(key)
                     if (!fieldValid) {
                         isValid = false
                     }
-                    // 🚨 安全检查：只有在 fieldErrors 对象中存在的字段才进行 UI 状态更新
                     if (showErrors && this.fieldErrors[key]) {
                         this.fieldErrors[key].show = !fieldValid
                     }
@@ -378,12 +334,12 @@
                 return isValid
             },
 
-            // 内部纯校验逻辑（不操作 UI）
+            // 内部纯校验逻辑
             checkFieldValid(fieldName) {
-                const value = this.formData[fieldName]
-                if (fieldName === 'projectName') return !!this.formData.projectId
-                if (fieldName === 'appName') return !!this.formData.appId
-                return !!(value && value.trim() !== '')
+                const value = this.sastTask[fieldName]
+                if (fieldName === 'projectName') return !!this.sastTask.projectId
+                if (fieldName === 'appName') return !!this.sastTask.appId
+                return !!(value && typeof value === 'string' && value.trim() !== '')
             },
             
             // 清除测试结果
@@ -399,39 +355,27 @@
             
             // 测试连接
             async testConnection() {
-                // 仅验证服务器和 Token
                 const isServerValid = this.validateField('server')
                 const isTokenValid = this.validateField('token')
                 
-                if (!isServerValid || !isTokenValid) {
-                    return
-                }
+                if (!isServerValid || !isTokenValid) return
                 
                 this.isLoading = true
                 this.clearTestResult()
                 
                 try {
-                    // 处理 server 地址
-                    let server = this.formData.server.trim()
-                    
-                    // 自动添加 http:// 前缀
+                    let server = this.sastTask.server.trim()
                     if (!server.startsWith('http://') && !server.startsWith('https://')) {
                         server = 'http://' + server
                     }
-                    
-                    // 移除末尾的 /
                     if (server.endsWith('/')) {
                         server = server.substring(0, server.length - 1)
                     }
                     
-                    // 构建完整 URL（与后端保持一致）
                     const apiPath = '/sast/api-v1/open-api/system/user/token/connect'
-                    const token = this.formData.token.trim()
+                    const token = this.sastTask.token.trim()
                     const url = `${server}${apiPath}?token=${encodeURIComponent(token)}`
                     
-                    console.log('Testing connection to:', url)
-                    
-                    // 发送 GET 请求，Header 也带上 token（与后端保持一致）
                     const response = await this.ajax({
                         url: url,
                         method: 'GET',
@@ -439,90 +383,36 @@
                             'Sast-Token': token,
                             'User-Agent': 'bkci-custom-atom-frontend/1.0'
                         },
-                        timeout: 10000 // 10秒超时
+                        timeout: 10000
                     })
                     
-                    // 检查响应中的 duration 字段
-                    console.log('Connection test response:', response)
-                    
                     if (response && response.code === 0 && response.data && response.data.duration === "1") {
-                        // duration === "1" 表示连接成功
-                        this.testResult = {
-                            show: true,
-                            type: 'success',
-                            message: '连接成功！'
-                        }
-                        
-                        // 3秒后自动隐藏成功提示
-                        this.successTimer = setTimeout(() => {
-                            this.clearTestResult()
-                        }, 3000)
+                        this.testResult = { show: true, type: 'success', message: '连接成功！' }
+                        this.successTimer = setTimeout(() => this.clearTestResult(), 3000)
                     } else {
-                        // duration 不为 1，视为失败
-                        throw new Error('连接测试失败：duration 字段校验不通过')
+                        throw new Error('连接测试失败：响应异常')
                     }
-                    
                 } catch (error) {
-                    // 连接失败
-                    console.error('Connection test failed:', error)
-                    
-                    let errorMessage = '连接失败，请检查服务器地址和Token是否正确'
-                    
-                    if (error.message) {
-                        errorMessage = error.message
-                    } else if (error.response) {
-                        const status = error.response.status
-                        const data = error.response.data
-                        
-                        if (data && data.message) {
-                            errorMessage = `连接失败 (${status}): ${data.message}`
-                        } else {
-                            errorMessage = `连接失败，HTTP 状态码: ${status}`
-                        }
-                    }
-                    
-                    this.testResult = {
-                        show: true,
-                        type: 'error',
-                        message: errorMessage
-                    }
+                    this.testResult = { show: true, type: 'error', message: error.message || '连接失败' }
                 } finally {
                     this.isLoading = false
                 }
             },
             
-            // 当用户输入相关参数后，把字段写入到this.atomValue
-            handleUpdate(name, value) {
-                this.atomValue[name] = value
-            },
-            
             // 获取项目列表
             async fetchProjectList(keyword = '') {
-                if (!this.formData.server || !this.formData.token) {
-                    console.warn('Server or token not set, cannot fetch project list')
-                    return
-                }
+                if (!this.sastTask.server || !this.sastTask.token) return
                 
                 this.projectLoading = true
                 try {
-                    let server = this.formData.server.trim()
-                    if (!server.startsWith('http://') && !server.startsWith('https://')) {
-                        server = 'http://' + server
-                    }
-                    if (server.endsWith('/')) {
-                        server = server.substring(0, server.length - 1)
-                    }
-                    
-                    const token = this.formData.token.trim()
-                    const url = `${server}/sast/api-v1/open-api/project/page?contParam=${encodeURIComponent(keyword)}&roleId=&status=&sort=&order=&pageNum=1&pageSize=20`
+                    let server = this.sastTask.server.trim()
+                    if (!server.startsWith('http://')) server = 'http://' + server
+                    const url = `${server.replace(/\/$/, '')}/sast/api-v1/open-api/project/page?contParam=${encodeURIComponent(keyword)}&pageSize=20`
                     
                     const response = await this.ajax({
                         url: url,
                         method: 'GET',
-                        headers: {
-                            'Sast-Token': token
-                        },
-                        timeout: 10000
+                        headers: { 'Sast-Token': this.sastTask.token.trim() }
                     })
                     
                     if (response && response.code === 0 && response.data && response.data.records) {
@@ -530,12 +420,9 @@
                             id: item.projectId,
                             name: item.projectName
                         }))
-                    } else {
-                        this.projectList = []
                     }
                 } catch (error) {
-                    console.error('Failed to fetch project list:', error)
-                    this.projectList = []
+                    console.error('Fetch project list failed', error)
                 } finally {
                     this.projectLoading = false
                 }
@@ -543,50 +430,28 @@
             
             // 获取应用列表
             async fetchAppList(keyword = '') {
-                if (!this.formData.server || !this.formData.token || !this.formData.projectId) {
-                    console.warn('Server, token or projectId not set, cannot fetch app list')
-                    return
-                }
+                if (!this.sastTask.server || !this.sastTask.token || !this.sastTask.projectId) return
                 
                 this.appLoading = true
                 try {
-                    let server = this.formData.server.trim()
-                    if (!server.startsWith('http://') && !server.startsWith('https://')) {
-                        server = 'http://' + server
-                    }
-                    if (server.endsWith('/')) {
-                        server = server.substring(0, server.length - 1)
-                    }
-                    
-                    const token = this.formData.token.trim()
-                    const projectId = this.formData.projectId
-                    const url = `${server}/sast/api-v1/app/info/${projectId}?sort=&order=&projectId=${projectId}&pageNum=1&pageSize=20`
+                    let server = this.sastTask.server.trim()
+                    if (!server.startsWith('http://')) server = 'http://' + server
+                    const url = `${server.replace(/\/$/, '')}/sast/api-v1/app/info/${this.sastTask.projectId}`
                     
                     const response = await this.ajax({
                         url: url,
                         method: 'GET',
-                        headers: {
-                            'Sast-Token': token
-                        },
-                        timeout: 10000
+                        headers: { 'Sast-Token': this.sastTask.token.trim() }
                     })
                     
                     if (response && response.code === 0 && response.data && response.data.records) {
-                        let apps = response.data.records
-                        // 如果有搜索关键字，进行前端过滤
-                        if (keyword) {
-                            apps = apps.filter(item => item.appName && item.appName.toLowerCase().includes(keyword.toLowerCase()))
-                        }
-                        this.appList = apps.map(item => ({
+                        this.appList = response.data.records.map(item => ({
                             id: item.appId,
                             name: item.appName
                         }))
-                    } else {
-                        this.appList = []
                     }
                 } catch (error) {
-                    console.error('Failed to fetch app list:', error)
-                    this.appList = []
+                    console.error('Fetch app list failed', error)
                 } finally {
                     this.appLoading = false
                 }
@@ -596,18 +461,11 @@
             handleProjectChange(projectId) {
                 const project = this.projectList.find(p => p.id === projectId)
                 if (project) {
-                    this.formData.projectId = project.id
-                    this.formData.projectName = project.name
-                    // 自动重置并加载应用列表
-                    this.resetAppData()
+                    this.updateTaskField('projectId', project.id)
+                    this.updateTaskField('projectName', project.name)
                     this.fetchAppList()
                 } else {
                     this.resetProjectData()
-                }
-                
-                // 值变动后如果已触摸，则触发校验
-                if (this.touched.projectName) {
-                    this.validateField('projectName')
                 }
             },
             
@@ -615,36 +473,23 @@
             handleAppChange(appId) {
                 const app = this.appList.find(a => a.id === appId)
                 if (app) {
-                    this.formData.appId = app.id
-                    this.formData.appName = app.name
+                    this.updateTaskField('appId', app.id)
+                    this.updateTaskField('appName', app.name)
                 } else {
                     this.resetAppData()
                 }
-                
-                // 值变动后如果已触摸，则触发校验
-                if (this.touched.appName) {
-                    this.validateField('appName')
-                }
             },
 
-            // 展开项目下拉框时，如果列表为空则获取
             handleProjectToggle(isOpen) {
-                if (isOpen && this.projectList.length === 0) {
-                    this.fetchProjectList()
-                }
-                // 下拉框关闭时标记为已触摸，并触发红框校验
+                if (isOpen && this.projectList.length === 0) this.fetchProjectList()
                 if (!isOpen) {
                     this.touched.projectName = true
                     this.validateField('projectName')
                 }
             },
 
-            // 展开应用下拉框时，如果列表为空则获取
             handleAppToggle(isOpen) {
-                if (isOpen && this.appList.length === 0 && this.formData.projectId) {
-                    this.fetchAppList()
-                }
-                // 下拉框关闭时标记为已触摸，并触发红框校验
+                if (isOpen && this.appList.length === 0 && this.sastTask.projectId) this.fetchAppList()
                 if (!isOpen) {
                     this.touched.appName = true
                     this.validateField('appName')
@@ -665,35 +510,16 @@
 
             // 保存配置
             saveConfiguration() {
-                // 1. 执行全量验证
                 const isValid = this.validateAll()
-                
                 if (isValid) {
-                    // 2. 强制全量同步数据到 atomValue，确保平台能立即拿到最新值
-                    Object.keys(this.formData).forEach(key => {
-                        this.$set(this.atomValue, key, this.formData[key])
-                    })
-
-                    // 3. 通知平台上层：插件状态正常，解锁流水线保存按钮
+                    this.syncToPlatform() // 显式同步到 atomValue
                     this.setAtomIsError(false)
-
-                    this.saveStatus = {
-                        show: true,
-                        message: '保存成功'
-                    }
+                    this.saveStatus = { show: true, message: '保存成功' }
                 } else {
-                    // 4. 通知平台上层：插件状态异常，标红插件并拦截流水线保存
                     this.setAtomIsError(true)
-
-                    this.saveStatus = {
-                        show: true,
-                        message: '请完善必填信息'
-                    }
+                    this.saveStatus = { show: true, message: '请完善必填信息' }
                 }
-
-                setTimeout(() => {
-                    this.saveStatus.show = false
-                }, 3000)
+                setTimeout(() => this.saveStatus.show = false, 3000)
             }
         },
         beforeDestroy() {

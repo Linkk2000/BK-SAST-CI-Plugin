@@ -15,13 +15,11 @@ export const mockTestConnection = async (server, token) => {
     }
     
     return {
+        code: 0,
+        message: "success",
         data: {
-            code: 0,
-            message: "success",
-            data: {
-                token: "sast_mock_token_12345",
-                duration: "1"  // 这个字段很重要
-            }
+            token: "sast_mock_token_12345",
+            duration: "1"  // 这个字段很重要
         }
     }
 }
@@ -97,16 +95,14 @@ export const mockProjectList = async (keyword = '') => {
     }
     
     return {
+        code: 0,
+        message: "success",
         data: {
-            code: 0,
-            message: "success",
-            data: {
-                records: filtered,
-                total: filtered.length,
-                size: 20,
-                current: 1,
-                pages: 1
-            }
+            records: filtered,
+            total: filtered.length,
+            size: 20,
+            current: 1,
+            pages: 1
         }
     }
 }
@@ -240,16 +236,14 @@ export const mockAppList = async (projectId, keyword = '') => {
     }
     
     return {
+        code: 0,
+        message: "success",
         data: {
-            code: 0,
-            message: "success",
-            data: {
-                records: apps,
-                total: apps.length,
-                size: 20,
-                current: 1,
-                pages: 1
-            }
+            records: apps,
+            total: apps.length,
+            size: 20,
+            current: 1,
+            pages: 1
         }
     }
 }
