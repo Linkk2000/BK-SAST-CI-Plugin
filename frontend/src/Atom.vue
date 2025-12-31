@@ -1,126 +1,146 @@
 <template>
     <section class="bk-form bk-form-vertical atom-form">
-        <!-- SAST服务器地址 -->
-        <div class="form-group" :class="{ 'has-error': errors.server.show }">
-            <label class="form-label required">SAST服务器地址</label>
-            <input 
-                type="text" 
-                class="form-input"
-                v-model="formData.server"
-                @blur="handleBlur('server')"
-                @input="handleInput('server')"
-                placeholder="请输入SAST服务器地址"
-                :disabled="atomPropsDisabled"
-            />
-            <div class="error-message" v-if="errors.server.show">
-                {{ errors.server.message }}
+        <!-- 第一部分：服务器信息 -->
+        <div class="form-section">
+            <h3 class="section-title">服务器信息</h3>
+            
+            <!-- SAST服务器地址 -->
+            <div class="form-group" :class="{ 'has-error': fieldErrors.server.show }">
+                <label class="form-label required">SAST服务器地址</label>
+                <input 
+                    type="text" 
+                    class="form-input"
+                    v-model="formData.server"
+                    @blur="handleBlur('server')"
+                    @input="handleInput('server')"
+                    placeholder="请输入SAST服务器地址"
+                    :disabled="atomPropsDisabled"
+                />
+                <div class="error-message" v-if="fieldErrors.server.show">
+                    {{ fieldErrors.server.message }}
+                </div>
+            </div>
+
+            <!-- Token -->
+            <div class="form-group" :class="{ 'has-error': fieldErrors.token.show }">
+                <label class="form-label required">Token</label>
+                <input 
+                    type="password" 
+                    class="form-input"
+                    v-model="formData.token"
+                    @blur="handleBlur('token')"
+                    @input="handleInput('token')"
+                    placeholder="请输入Token"
+                    :disabled="atomPropsDisabled"
+                />
+                <div class="error-message" v-if="fieldErrors.token.show">
+                    {{ fieldErrors.token.message }}
+                </div>
+            </div>
+
+            <!-- 测试连接按钮 -->
+            <div class="test-connection-wrapper">
+                <button 
+                    class="test-btn"
+                    :class="{ 'is-loading': isLoading }"
+                    @click="testConnection"
+                    :disabled="atomPropsDisabled || isLoading"
+                >
+                    <span v-if="isLoading">测试中...</span>
+                    <span v-else>测试连接</span>
+                </button>
+                
+                <transition name="fade">
+                    <div class="test-result success" v-if="testResult.show && testResult.type === 'success'">
+                        <span class="message">连接成功</span>
+                    </div>
+                </transition>
+                
+                <transition name="fade">
+                    <div class="test-result error" v-if="testResult.show && testResult.type === 'error'">
+                        <span class="message">{{ testResult.message }}</span>
+                    </div>
+                </transition>
             </div>
         </div>
 
-        <!-- Token -->
-        <div class="form-group" :class="{ 'has-error': errors.token.show }">
-            <label class="form-label required">Token</label>
-            <input 
-                type="password" 
-                class="form-input"
-                v-model="formData.token"
-                @blur="handleBlur('token')"
-                @input="handleInput('token')"
-                placeholder="请输入Token"
-                :disabled="atomPropsDisabled"
-            />
-            <div class="error-message" v-if="errors.token.show">
-                {{ errors.token.message }}
+        <!-- 第二部分：扫描任务信息 -->
+        <div class="form-section">
+            <h3 class="section-title">扫描任务信息</h3>
+            
+            <!-- 项目选择 -->
+            <div class="form-group" :class="{ 'has-error': fieldErrors.projectName.show }">
+                <label class="form-label required">项目</label>
+                <bk-select 
+                    v-model="formData.projectId"
+                    :searchable="true"
+                    :loading="projectLoading"
+                    :disabled="atomPropsDisabled || !formData.server || !formData.token"
+                    placeholder="请选择或搜索项目"
+                    @change="handleProjectChange"
+                    @clear="resetProjectData"
+                    @toggle="handleProjectToggle"
+                >
+                    <bk-option 
+                        v-for="project in projectList" 
+                        :key="project.id" 
+                        :id="project.id" 
+                        :name="project.name"
+                    >
+                    </bk-option>
+                </bk-select>
+                <div class="error-message" v-if="fieldErrors.projectName.show">
+                    {{ fieldErrors.projectName.message }}
+                </div>
+                <div class="field-tip" v-if="!formData.server || !formData.token">
+                    请先完成服务器信息配置并测试连接
+                </div>
+            </div>
+
+            <!-- 应用选择 -->
+            <div class="form-group" :class="{ 'has-error': fieldErrors.appName.show }">
+                <label class="form-label required">应用</label>
+                <bk-select 
+                    v-model="formData.appId"
+                    :searchable="true"
+                    :loading="appLoading"
+                    :disabled="atomPropsDisabled || !formData.projectId"
+                    placeholder="请选择或搜索应用"
+                    @change="handleAppChange"
+                    @clear="resetAppData"
+                    @toggle="handleAppToggle"
+                >
+                    <bk-option 
+                        v-for="app in appList" 
+                        :key="app.id" 
+                        :id="app.id" 
+                        :name="app.name"
+                    >
+                    </bk-option>
+                </bk-select>
+                <div class="error-message" v-if="fieldErrors.appName.show">
+                    {{ fieldErrors.appName.message }}
+                </div>
+                <div class="field-tip" v-if="!formData.projectId">
+                    请先选择关联项目
+                </div>
             </div>
         </div>
 
-        <!-- 测试连接按钮 -->
-        <div class="test-connection-wrapper">
+        <!-- 底部操作栏 -->
+        <div class="form-actions">
             <button 
-                class="test-btn"
-                :class="{ 'is-loading': isLoading }"
-                @click="testConnection"
-                :disabled="atomPropsDisabled || isLoading"
+                class="save-btn" 
+                @click="saveConfiguration"
+                :disabled="atomPropsDisabled"
             >
-                <span v-if="isLoading">测试中...</span>
-                <span v-else>测试连接</span>
+                保存配置
             </button>
-            
-            <!-- 成功提示 -->
             <transition name="fade">
-                <div class="test-result success" v-if="testResult.show && testResult.type === 'success'">
-                    <span class="icon">✓</span>
-                    <span class="message">连接成功！</span>
+                <div class="save-status" v-if="saveStatus.show">
+                    {{ saveStatus.message }}
                 </div>
             </transition>
-            
-            <!-- 失败提示 -->
-            <transition name="fade">
-                <div class="test-result error" v-if="testResult.show && testResult.type === 'error'">
-                    <span class="icon">✗</span>
-                    <span class="message">{{ testResult.message }}</span>
-                </div>
-            </transition>
-        </div>
-
-        <!-- 项目选择 -->
-        <div class="form-group" :class="{ 'has-error': errors.projectName.show }">
-            <label class="form-label required">项目</label>
-            <select 
-                class="form-select"
-                v-model="formData.projectId"
-                @change="handleProjectChange(formData.projectId)"
-                @focus="fetchProjectList()"
-                :disabled="atomPropsDisabled || !formData.server || !formData.token"
-            >
-                <option value="">请选择项目</option>
-                <option 
-                    v-for="project in projectList" 
-                    :key="project.id" 
-                    :value="project.id"
-                >
-                    {{ project.name }}
-                </option>
-            </select>
-            <div class="error-message" v-if="errors.projectName.show">
-                {{ errors.projectName.message }}
-            </div>
-            <div class="field-tip" v-if="!formData.server || !formData.token">
-                请先填写服务器地址和Token
-            </div>
-            <div class="field-tip" v-if="projectLoading">
-                加载中...
-            </div>
-        </div>
-
-        <!-- 应用选择 -->
-        <div class="form-group" :class="{ 'has-error': errors.appName.show }">
-            <label class="form-label required">应用</label>
-            <select 
-                class="form-select"
-                v-model="formData.appId"
-                @change="handleAppChange(formData.appId)"
-                @focus="fetchAppList()"
-                :disabled="atomPropsDisabled || !formData.projectId"
-            >
-                <option value="">请选择应用</option>
-                <option 
-                    v-for="app in appList" 
-                    :key="app.id" 
-                    :value="app.id"
-                >
-                    {{ app.name }}
-                </option>
-            </select>
-            <div class="error-message" v-if="errors.appName.show">
-                {{ errors.appName.message }}
-            </div>
-            <div class="field-tip" v-if="!formData.projectId">
-                请先选择项目
-            </div>
-            <div class="field-tip" v-if="appLoading">
-                加载中...
-            </div>
         </div>
     </section>
 </template>
@@ -128,6 +148,7 @@
 <script>
     // 需引用atomMixin
     import { atomMixin } from 'bkci-atom-components'
+    import { mockAjax } from '@/utils/mock'
 
     export default {
         name: 'atom',
@@ -160,7 +181,7 @@
                     appId: '',
                     appName: ''
                 },
-                errors: {
+                fieldErrors: {
                     server: {
                         show: false,
                         message: ''
@@ -190,6 +211,10 @@
                     type: '', // 'success' or 'error'
                     message: ''
                 },
+                saveStatus: {
+                    show: false,
+                    message: ''
+                },
                 successTimer: null,
                 // 项目相关
                 projectList: [],
@@ -201,28 +226,83 @@
                 appSearchKeyword: ''
             }
         },
+        computed: {
+            // 判断是否为本地开发环境
+            isLocalDev() {
+                return typeof ISLOCAL !== 'undefined' && ISLOCAL === true
+            },
+            // 是否启用 Mock 数据（本地开发时自动启用）
+            useMock() {
+                return this.isLocalDev
+            },
+            // 决定使用真实 Ajax 还是 Mock Ajax
+            ajax() {
+                return this.useMock ? mockAjax : this.$ajax
+            }
+        },
+        created() {
+            if (this.useMock) {
+                console.warn('[BKCI-ATOM] MOCK MODE ENABLED')
+            }
+        },
         mounted() {
+            console.log('Atom component mounted')
+            console.log('atomValue:', this.atomValue)
             // 从 atomValue 中初始化表单数据
             if (this.atomValue) {
-                this.formData.server = this.atomValue.server || ''
-                this.formData.token = this.atomValue.token || ''
-                this.formData.projectId = this.atomValue.projectId || ''
-                this.formData.projectName = this.atomValue.projectName || ''
-                this.formData.appId = this.atomValue.appId || ''
-                this.formData.appName = this.atomValue.appName || ''
+                // 1. 先把值读出来
+                let server = this.atomValue.server || ''
+                let token = this.atomValue.token || ''
+                let projectId = this.atomValue.projectId || ''
+                let projectName = this.atomValue.projectName || ''
+                let appId = this.atomValue.appId || ''
+                let appName = this.atomValue.appName || ''
+
+                // 2. 强力合规性校验（三级限制）
+                // 第一级校验：服务器和Token不存在，则下级全部移除
+                if (!server || !token) {
+                    projectId = ''
+                    projectName = ''
+                    appId = ''
+                    appName = ''
+                }
+                // 第二级校验：项目不存在，则应用移除
+                else if (!projectId) {
+                    appId = ''
+                    appName = ''
+                }
+
+                // 3. 将清洗后的数据写回本地表单和 atomValue
+                this.formData.server = server
+                this.formData.token = token
+                this.formData.projectId = projectId
+                this.formData.projectName = projectName
+                this.formData.appId = appId
+                this.formData.appName = appName
+
+                this.atomValue.projectId = projectId
+                this.atomValue.projectName = projectName
+                this.atomValue.appId = appId
+                this.atomValue.appName = appName
             }
         },
         watch: {
             'formData.server'(newVal) {
                 this.atomValue.server = newVal
                 this.clearTestResult()
+                // 当服务器地址变动或清空时，重置所有下级数据
+                this.resetProjectData()
             },
             'formData.token'(newVal) {
                 this.atomValue.token = newVal
                 this.clearTestResult()
+                // 当 Token 变动或清空时，重置所有下级数据
+                this.resetProjectData()
             },
             'formData.projectId'(newVal) {
                 this.atomValue.projectId = newVal
+                // 当项目 ID 变动或清空时，重置应用数据
+                this.resetAppData()
             },
             'formData.projectName'(newVal) {
                 this.atomValue.projectName = newVal
@@ -235,6 +315,20 @@
             }
         },
         methods: {
+            // 重置项目及以下所有数据
+            resetProjectData() {
+                this.formData.projectId = ''
+                this.formData.projectName = ''
+                this.projectList = []
+                this.resetAppData()
+            },
+            
+            // 重置应用数据
+            resetAppData() {
+                this.formData.appId = ''
+                this.formData.appName = ''
+                this.appList = []
+            },
             // 验证单个字段
             validateField(fieldName) {
                 const value = this.formData[fieldName]
@@ -242,13 +336,13 @@
                 // 特殊处理：projectName 和 appName 的验证基于对应的 ID
                 if (fieldName === 'projectName') {
                     if (!this.formData.projectId) {
-                        this.errors.projectName = {
+                        this.fieldErrors.projectName = {
                             show: true,
                             message: '请选择项目'
                         }
                         return false
                     } else {
-                        this.errors.projectName = {
+                        this.fieldErrors.projectName = {
                             show: false,
                             message: ''
                         }
@@ -258,13 +352,13 @@
                 
                 if (fieldName === 'appName') {
                     if (!this.formData.appId) {
-                        this.errors.appName = {
+                        this.fieldErrors.appName = {
                             show: true,
                             message: '请选择应用'
                         }
                         return false
                     } else {
-                        this.errors.appName = {
+                        this.fieldErrors.appName = {
                             show: false,
                             message: ''
                         }
@@ -273,13 +367,13 @@
                 }
                 
                 if (!value || value.trim() === '') {
-                    this.errors[fieldName] = {
+                    this.fieldErrors[fieldName] = {
                         show: true,
                         message: '字段不能为空'
                     }
                     return false
                 } else {
-                    this.errors[fieldName] = {
+                    this.fieldErrors[fieldName] = {
                         show: false,
                         message: ''
                     }
@@ -301,14 +395,27 @@
             },
             
             // 验证所有字段
-            validateAll() {
+            validateAll(showErrors = true) {
                 let isValid = true
                 Object.keys(this.formData).forEach(key => {
-                    if (!this.validateField(key)) {
+                    const fieldValid = this.checkFieldValid(key)
+                    if (!fieldValid) {
                         isValid = false
+                    }
+                    // 🚨 安全检查：只有在 fieldErrors 对象中存在的字段才进行 UI 状态更新
+                    if (showErrors && this.fieldErrors[key]) {
+                        this.fieldErrors[key].show = !fieldValid
                     }
                 })
                 return isValid
+            },
+
+            // 内部纯校验逻辑（不操作 UI）
+            checkFieldValid(fieldName) {
+                const value = this.formData[fieldName]
+                if (fieldName === 'projectName') return !!this.formData.projectId
+                if (fieldName === 'appName') return !!this.formData.appId
+                return !!(value && value.trim() !== '')
             },
             
             // 清除测试结果
@@ -324,8 +431,11 @@
             
             // 测试连接
             async testConnection() {
-                // 验证所有必填字段
-                if (!this.validateAll()) {
+                // 仅验证服务器和 Token
+                const isServerValid = this.validateField('server')
+                const isTokenValid = this.validateField('token')
+                
+                if (!isServerValid || !isTokenValid) {
                     return
                 }
                 
@@ -354,7 +464,7 @@
                     console.log('Testing connection to:', url)
                     
                     // 发送 GET 请求，Header 也带上 token（与后端保持一致）
-                    const response = await this.$ajax({
+                    const response = await this.ajax({
                         url: url,
                         method: 'GET',
                         headers: {
@@ -367,7 +477,7 @@
                     // 检查响应中的 duration 字段
                     console.log('Connection test response:', response)
                     
-                    if (response.data && response.data.data && response.data.data.duration === "1") {
+                    if (response && response.code === 0 && response.data && response.data.duration === "1") {
                         // duration === "1" 表示连接成功
                         this.testResult = {
                             show: true,
@@ -438,7 +548,7 @@
                     const token = this.formData.token.trim()
                     const url = `${server}/sast/api-v1/open-api/project/page?contParam=${encodeURIComponent(keyword)}&roleId=&status=&sort=&order=&pageNum=1&pageSize=20`
                     
-                    const response = await this.$ajax({
+                    const response = await this.ajax({
                         url: url,
                         method: 'GET',
                         headers: {
@@ -447,8 +557,8 @@
                         timeout: 10000
                     })
                     
-                    if (response.data && response.data.code === 0 && response.data.data && response.data.data.records) {
-                        this.projectList = response.data.data.records.map(item => ({
+                    if (response && response.code === 0 && response.data && response.data.records) {
+                        this.projectList = response.data.records.map(item => ({
                             id: item.projectId,
                             name: item.projectName
                         }))
@@ -484,7 +594,7 @@
                     const projectId = this.formData.projectId
                     const url = `${server}/sast/api-v1/app/info/${projectId}?sort=&order=&projectId=${projectId}&pageNum=1&pageSize=20`
                     
-                    const response = await this.$ajax({
+                    const response = await this.ajax({
                         url: url,
                         method: 'GET',
                         headers: {
@@ -493,8 +603,8 @@
                         timeout: 10000
                     })
                     
-                    if (response.data && response.data.code === 0 && response.data.data && response.data.data.records) {
-                        let apps = response.data.data.records
+                    if (response && response.code === 0 && response.data && response.data.records) {
+                        let apps = response.data.records
                         // 如果有搜索关键字，进行前端过滤
                         if (keyword) {
                             apps = apps.filter(item => item.appName && item.appName.toLowerCase().includes(keyword.toLowerCase()))
@@ -520,12 +630,16 @@
                 if (project) {
                     this.formData.projectId = project.id
                     this.formData.projectName = project.name
-                    // 清空应用选择
-                    this.formData.appId = ''
-                    this.formData.appName = ''
-                    this.appList = []
-                    // 自动加载应用列表
+                    // 自动重置并加载应用列表
+                    this.resetAppData()
                     this.fetchAppList()
+                } else {
+                    this.resetProjectData()
+                }
+                
+                // 值变动后如果已触摸，则触发校验
+                if (this.touched.projectName) {
+                    this.validateField('projectName')
                 }
             },
             
@@ -535,6 +649,37 @@
                 if (app) {
                     this.formData.appId = app.id
                     this.formData.appName = app.name
+                } else {
+                    this.resetAppData()
+                }
+                
+                // 值变动后如果已触摸，则触发校验
+                if (this.touched.appName) {
+                    this.validateField('appName')
+                }
+            },
+
+            // 展开项目下拉框时，如果列表为空则获取
+            handleProjectToggle(isOpen) {
+                if (isOpen && this.projectList.length === 0) {
+                    this.fetchProjectList()
+                }
+                // 下拉框关闭时标记为已触摸，并触发红框校验
+                if (!isOpen) {
+                    this.touched.projectName = true
+                    this.validateField('projectName')
+                }
+            },
+
+            // 展开应用下拉框时，如果列表为空则获取
+            handleAppToggle(isOpen) {
+                if (isOpen && this.appList.length === 0 && this.formData.projectId) {
+                    this.fetchAppList()
+                }
+                // 下拉框关闭时标记为已触摸，并触发红框校验
+                if (!isOpen) {
+                    this.touched.appName = true
+                    this.validateField('appName')
                 }
             },
             
@@ -548,32 +693,137 @@
             handleAppSearch(keyword) {
                 this.appSearchKeyword = keyword
                 this.fetchAppList(keyword)
+            },
+
+            // 保存配置
+            saveConfiguration() {
+                // 1. 执行全量验证
+                const isValid = this.validateAll()
+                
+                if (isValid) {
+                    // 2. 强制全量同步数据到 atomValue，确保平台能立即拿到最新值
+                    Object.keys(this.formData).forEach(key => {
+                        this.$set(this.atomValue, key, this.formData[key])
+                    })
+
+                    // 3. 通知平台上层：插件状态正常，解锁流水线保存按钮
+                    this.setAtomIsError(false)
+
+                    this.saveStatus = {
+                        show: true,
+                        message: '保存成功'
+                    }
+                } else {
+                    // 4. 通知平台上层：插件状态异常，标红插件并拦截流水线保存
+                    this.setAtomIsError(true)
+
+                    this.saveStatus = {
+                        show: true,
+                        message: '请完善必填信息'
+                    }
+                }
+
+                setTimeout(() => {
+                    this.saveStatus.show = false
+                }, 3000)
             }
         },
         beforeDestroy() {
             if (this.successTimer) {
                 clearTimeout(this.successTimer)
             }
+            
+            // 🚨 组件销毁前（关闭侧边栏时）的最后一次同步与状态回传
+            // 1. 强制全量同步一次数据
+            Object.keys(this.formData).forEach(key => {
+                this.$set(this.atomValue, key, this.formData[key])
+            })
+            
+            // 2. 执行静默校验并通知平台最终状态
+            const isFinalValid = this.validateAll(false) // false 表示不显示 UI 上的红色错误
+            this.setAtomIsError(!isFinalValid)
+            
+            console.log('[BKCI-ATOM] Final cleanup and sync completed. Valid:', isFinalValid)
         }
     }
 </script>
 
 <style lang="scss" scoped>
     .atom-form {
-        padding: 20px 0;
+        padding: 10px 0;
+
+        .form-section {
+            background: #fff;
+            border: 1px solid #dcdee5;
+            border-radius: 2px;
+            padding: 20px;
+            margin-bottom: 20px;
+
+            .section-title {
+                margin: 0 0 20px 0;
+                padding-bottom: 10px;
+                border-bottom: 1px solid #f0f1f5;
+                font-size: 16px;
+                color: #313238;
+                font-weight: bold;
+            }
+        }
         
         .form-group {
             margin-bottom: 20px;
             
+            &:last-child {
+                margin-bottom: 0;
+            }
+            
             &.has-error {
-                .form-input {
-                    border-color: #ff5656;
+                .form-input,
+                .bk-select {
+                    border-color: #ff5656 !important;
                     
-                    &:focus {
-                        border-color: #ff5656;
+                    &:focus,
+                    &.is-focus {
+                        border-color: #ff5656 !important;
                         box-shadow: 0 0 0 2px rgba(255, 86, 86, 0.1);
                     }
                 }
+            }
+        }
+
+        .form-actions {
+            margin-top: 30px;
+            padding: 20px 0;
+            border-top: 1px solid #f0f1f5;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+
+            .save-btn {
+                height: 40px;
+                padding: 0 40px;
+                font-size: 14px;
+                color: #fff;
+                background-color: #3a84ff;
+                border: none;
+                border-radius: 2px;
+                cursor: pointer;
+                font-weight: bold;
+                transition: background-color 0.2s;
+                
+                &:hover:not(:disabled) {
+                    background-color: #4e94ff;
+                }
+                
+                &:disabled {
+                    background-color: #dcdee5;
+                    cursor: not-allowed;
+                }
+            }
+
+            .save-status {
+                font-size: 14px;
+                color: #63656e;
+                animation: fadeIn 0.3s ease-in;
             }
         }
         
@@ -696,25 +946,12 @@
                 font-size: 14px;
                 animation: fadeIn 0.3s ease-in;
                 
-                .icon {
-                    font-size: 16px;
-                    font-weight: bold;
-                }
-                
                 &.success {
                     color: #2dcb56;
-                    
-                    .icon {
-                        color: #2dcb56;
-                    }
                 }
                 
                 &.error {
                     color: #ff5656;
-                    
-                    .icon {
-                        color: #ff5656;
-                    }
                 }
             }
         }

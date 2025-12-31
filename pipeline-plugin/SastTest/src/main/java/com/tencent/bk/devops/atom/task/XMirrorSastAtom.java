@@ -7,102 +7,93 @@ import com.tencent.bk.devops.atom.spi.AtomService;
 import com.tencent.bk.devops.atom.spi.TaskAtom;
 import com.tencent.bk.devops.atom.task.pojo.XMirrorSastAtomParam;
 import com.tencent.bk.devops.atom.utils.http.OkHttpUtils;
+import com.tencent.bk.devops.atom.utils.json.JsonUtil;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Map;
 
 @AtomService(paramClass = XMirrorSastAtomParam.class)
 public class XMirrorSastAtom implements TaskAtom<XMirrorSastAtomParam> {
     private final static Logger logger = LoggerFactory.getLogger(XMirrorSastAtom.class);
-    
-    // 这里的 IP 和路径根据你的需求固定
-    private static final String CONNECT_URL = "/sast/api-v1/open-api/system/user/token/connect";
+
+    private static final String EXECUTE_URL = "/sast/api-v1/open-api/app/executeAppAgain";
 
     @Override
     public void execute(AtomContext<XMirrorSastAtomParam> atomContext) {
         XMirrorSastAtomParam param = atomContext.getParam();
         AtomResult result = atomContext.getResult();
-        
-        // 打印所有参数
-        logger.info("========== SAST Plugin Execution Parameters ==========");
-        logger.info("Server: {}", param.getServer());
-        logger.info("Token: {}", param.getToken() != null ? "***" + param.getToken().substring(Math.max(0, param.getToken().length() - 4)) : "null");
-        logger.info("ProjectId: {}", param.getProjectId());
-        logger.info("ProjectName: {}", param.getProjectName());
-        logger.info("AppId: {}", param.getAppId());
-        logger.info("AppName: {}", param.getAppName());
-        logger.info("====================================================");
-        
-        String token = param.getToken();
+
         String server = param.getServer();
-        logger.info("Starting connection test...");
-        
-        if (token == null || token.trim().isEmpty()) {
-            fail(result, "Token is empty");
+        String token = param.getToken();
+        String appId = param.getAppId();
+
+        if (server == null || server.trim().isEmpty() || token == null || token.trim().isEmpty() || appId == null || appId.trim().isEmpty()) {
+            fail(result, "插件配置参数不完整，请检查服务器地址、Token和应用选择");
             return;
         }
-        if (server==null||server.trim().isEmpty()) {
-            fail(result, "Server is empty");
-            return;
-        }
+
         if (!server.startsWith("http://") && !server.startsWith("https://")) {
             server = "http://" + server;
         }
-        // server 如果最后存在 “/”则移除
         server = server.endsWith("/") ? server.substring(0, server.length() - 1) : server;
 
-        // 构建 URL，Query参数使用token
-        String url = server + CONNECT_URL + "?token=" + token;
-        
-        // 构建请求，Header参数也使用同一个token
+        String url = server + EXECUTE_URL;
+        RequestBody body = RequestBody.create(
+            "{\"appId\":" + appId + "}",
+            okhttp3.MediaType.get("application/json; charset=utf-8")
+        );
+
         Request request = new Request.Builder()
                 .url(url)
-                .get()
+                .post(body)
                 .addHeader("Sast-Token", token)
-                .addHeader("User-Agent", "bk-pipeline-plugin/1.0")
+                .addHeader("User-Agent", "bk-sast-plugin/1.0")
+                .addHeader("Content-Type", "application/json")
                 .build();
 
-        // 使用 doHttpRaw 获取原始 Response 对象以便读取状态码
         try (Response response = OkHttpUtils.doHttpRaw(request)) {
-            if (response == null) {
-                fail(result, "Response is null");
+            String responseBody = response != null && response.body() != null ? response.body().string() : "";
+            logger.info("HTTP Code: {}, Response: {}", response != null ? response.code() : "null", responseBody);
+
+            if (responseBody.isEmpty()) {
+                fail(result, "服务器返回内容为空");
                 return;
             }
 
-            int code = response.code();
-            String body = response.body() != null ? response.body().string() : "";
-            
-            logger.info("Response Code: {}", code);
-            logger.info("Response Body: {}", body);
-            
-            if (response.isSuccessful()) {
-                // 检查响应 JSON 中的 duration 字段
-                if (body.contains("\"duration\":\"1\"") || body.contains("\"duration\": \"1\"")) {
-                    result.setStatus(Status.success);
-                    result.setMessage("Connection successful - duration check passed");
-                    logger.info("Connection test passed: duration = 1");
-                } else {
-                    result.setStatus(Status.failure);
-                    result.setMessage("Connection test failed: duration != 1");
-                    logger.warn("Connection test failed: duration field not equals 1 in response");
-                }
-            } else {
-                result.setStatus(Status.failure);
-                result.setMessage("Connection failed with status: " + code);
+            // 使用 SDK 提供的 JsonUtil 解析 JSON，比正则表达式更可靠
+            Map<String, Object> responseMap = JsonUtil.fromJson(responseBody, Map.class);
+            if (responseMap == null) {
+                fail(result, "解析服务器返回数据失败");
+                return;
             }
-            
+
+            Object codeObj = responseMap.get("code");
+            int bizCode = (codeObj instanceof Number) ? ((Number) codeObj).intValue() : -1;
+            String bizMessage = (String) responseMap.getOrDefault("message", "服务器未返回错误描述");
+
+            if (bizCode == 0) {
+                result.setStatus(Status.success);
+                result.setMessage("扫描任务已成功启动");
+            } else if (bizCode == 400) {
+                fail(result, "请求参数有误(400): " + bizMessage);
+            } else if (bizCode == 401) {
+                fail(result, "认证失败(401): " + bizMessage);
+            } else {
+                fail(result, "系统异常(" + bizCode + "): " + bizMessage);
+            }
+
         } catch (IOException e) {
-            logger.error("Request failed", e);
-            fail(result, "Request failed: " + e.getMessage());
+            fail(result, "网络连接异常: " + e.getMessage());
         } catch (Exception e) {
-            logger.error("Unexpected error", e);
-            fail(result, "Unexpected error: " + e.getMessage());
+            fail(result, "插件执行异常: " + e.getMessage());
         }
     }
-    
+
     private void fail(AtomResult result, String message) {
         result.setStatus(Status.failure);
         result.setMessage(message);
