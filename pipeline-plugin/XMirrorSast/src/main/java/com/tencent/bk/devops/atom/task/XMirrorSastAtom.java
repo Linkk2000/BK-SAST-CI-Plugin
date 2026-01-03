@@ -52,7 +52,6 @@ public class XMirrorSastAtom implements TaskAtom<XMirrorSastAtomParam> {
                 .url(url)
                 .post(body)
                 .addHeader("Sast-Token", token)
-                .addHeader("User-Agent", "bk-sast-plugin/1.0")
                 .addHeader("Content-Type", "application/json")
                 .build();
 
@@ -76,15 +75,20 @@ public class XMirrorSastAtom implements TaskAtom<XMirrorSastAtomParam> {
             int bizCode = (codeObj instanceof Number) ? ((Number) codeObj).intValue() : -1;
             String bizMessage = (String) responseMap.getOrDefault("message", "服务器未返回错误描述");
 
+
             if (bizCode == 0) {
                 result.setStatus(Status.success);
                 result.setMessage("扫描任务已成功启动");
+                logger.info("扫描任务已成功启动");
             } else if (bizCode == 400) {
                 fail(result, "请求参数有误(400): " + bizMessage);
+                logger.error("请求参数有误(400): " + bizMessage);
             } else if (bizCode == 401) {
-                fail(result, "认证失败(401): " + bizMessage);
+                fail(result, "认证失败(401): " + bizMessage);   
+                logger.error("认证失败(401): " + bizMessage);
             } else {
                 fail(result, "系统异常(" + bizCode + "): " + bizMessage);
+                logger.error("系统异常(" + bizCode + "): " + bizMessage);
             }
 
         } catch (IOException e) {

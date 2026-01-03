@@ -1,12 +1,12 @@
 {
-  "atomCode": "SastTest",
+  "atomCode": "XMirrorSast",
   "htmlTemplateVersion": "1.2",
   "execution": {
-    "packagePath": "SastTest-jar-with-dependencies.jar",
+    "packagePath": "XMirrorSast-jar-with-dependencies.jar",
     "language": "java",
     "minimumVersion": "1.8",
     "demands": [],
-    "target": "java -jar SastTest-jar-with-dependencies.jar"
+    "target": "java -jar XMirrorSast-jar-with-dependencies.jar"
   },
   "input": {
     "server": {
