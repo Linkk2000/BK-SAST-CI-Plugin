@@ -1,5 +1,8 @@
 <template>
     <section class="bk-form bk-form-vertical atom-form">
+        <p v-if="configurationInvalid" role="alert" style="color: #b34700; background: #fff4e5; padding: 12px;">
+            插件配置不完整或存在错误，请完善下方标红配置后保存流水线。
+        </p>
         <!-- 第一部分：服务器信息 -->
         <div class="form-section">
             <h3 class="section-title">服务器信息</h3>
@@ -152,7 +155,7 @@
 
     export default {
         name: 'atom',
-        mixins: [atomMixin],    // 需引用atomMixin
+        mixins: [atomMixin, require('./utils/configuration-sync')('sastTask')],
         props: {
             atomPropsContainerInfo: {
                 type: Object,
@@ -374,7 +377,7 @@
                 // 仅验证我们需要同步到平台的字段
                 const fieldsToValidate = ['server', 'token', 'projectName', 'appName']
                 fieldsToValidate.forEach(key => {
-                    const fieldValid = this.checkFieldValid(key)
+                    const fieldValid = showErrors ? this.validateField(key) : this.checkFieldValid(key)
                     if (!fieldValid) {
                         isValid = false
                     }
@@ -388,6 +391,7 @@
             // 内部纯校验逻辑
             checkFieldValid(fieldName) {
                 const value = this.sastTask[fieldName]
+                if (fieldName === 'server') return typeof value === 'string' && /^https?:\/\//.test(value.trim())
                 if (fieldName === 'projectName') return !!this.sastTask.projectId
                 if (fieldName === 'appName') return !!this.sastTask.appId
                 return !!(value && typeof value === 'string' && value.trim() !== '')
@@ -615,6 +619,7 @@
 
             // 保存配置
             saveConfiguration() {
+                this.publishConfiguration()
                 const isValid = this.validateAll()
                 if (isValid) {
                     this.syncToPlatform() // 显式同步到 atomValue
@@ -637,8 +642,8 @@
                 window.__ATOM_INSTANCE__ = null
             }
             
-            // 💡 只有在点击保存按钮时才同步到 atomValue
-            // 侧边栏关闭时仅回传当前的校验状态，不强制覆盖数据，保护已保存的数据不被中间态破坏
+            if (this.atomPropsDisabled) return
+            // 编辑期间已主动同步，关闭时保留最终校验状态。
             const isFinalValid = this.validateAll(false)
             this.setAtomIsError(!isFinalValid)
             
